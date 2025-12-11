@@ -13,24 +13,31 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 export const api = {
   // Получить всех админов
   async getAdmins() {
-    const { data, error } = await supabase
-      .from('admins')
-      .select('*')
-      .order('created_at');
-    
-    if (error) throw error;
-    return data;
+    try {
+      const { data, error } = await supabase
+        .from('admins')
+        .select('*')
+        .eq('is_active', true)
+        .order('created_at');
+      
+      if (error) throw error;
+      return data || [];
+    } catch {
+      // Таблица admins может не существовать
+      return [];
+    }
   },
 
   // Получить активные сигналы
-  async getActiveSignals(adminId?: string, risk?: string) {
+  async getActiveSignals(adminTelegramId?: number, risk?: string) {
     let query = supabase
-      .from('active_signals_view')
+      .from('signals')
       .select('*')
+      .eq('status', 'active')
       .order('created_at', { ascending: false });
     
-    if (adminId) {
-      query = query.eq('admin_id', adminId);
+    if (adminTelegramId) {
+      query = query.eq('admin_telegram_id', adminTelegramId);
     }
     
     if (risk) {
@@ -40,7 +47,7 @@ export const api = {
     const { data, error } = await query;
     
     if (error) throw error;
-    return data;
+    return data || [];
   },
 
   // Проверить пользователя в whitelist
@@ -58,18 +65,23 @@ export const api = {
 
   // Проверить админа
   async checkAdmin(telegramId: number) {
-    const { data, error } = await supabase
-      .from('admins')
-      .select('*')
-      .eq('telegram_id', telegramId)
-      .single();
-    
-    if (error && error.code !== 'PGRST116') throw error;
-    return data;
+    try {
+      const { data, error } = await supabase
+        .from('admins')
+        .select('*')
+        .eq('telegram_id', telegramId)
+        .eq('is_active', true)
+        .single();
+      
+      if (error && error.code !== 'PGRST116') throw error;
+      return data;
+    } catch {
+      return null;
+    }
   },
 
-  // Создать сигнал (для админов через n8n webhook)
-  async createSignal(signalData: unknown) {
+  // Создать сигнал
+  async createSignal(signalData: Record<string, unknown>) {
     const { data, error } = await supabase
       .from('signals')
       .insert(signalData)
@@ -81,10 +93,10 @@ export const api = {
   },
 
   // Обновить сигнал
-  async updateSignal(signalId: string, updateData: unknown) {
+  async updateSignal(signalId: string, updateData: Record<string, unknown>) {
     const { data, error } = await supabase
       .from('signals')
-      .update(updateData)
+      .update({ ...updateData, updated_at: new Date().toISOString() })
       .eq('id', signalId)
       .select()
       .single();
@@ -93,11 +105,11 @@ export const api = {
     return data;
   },
 
-  // Удалить сигнал (мягкое удаление)
-  async deleteSignal(signalId: string) {
+  // Закрыть сигнал
+  async closeSignal(signalId: string, status: 'closed' | 'cancelled' | 'target_hit' = 'closed') {
     const { error } = await supabase
       .from('signals')
-      .update({ status: 'cancelled' })
+      .update({ status, updated_at: new Date().toISOString() })
       .eq('id', signalId);
     
     if (error) throw error;
@@ -108,24 +120,15 @@ export const api = {
   // ПОДПИСКИ НА УВЕДОМЛЕНИЯ О ЦЕНАХ
   // ==========================================
 
-  // Подписаться на сигнал
-  async subscribeToSignal(
-    signalId: string, 
-    telegramId: number,
-    options?: {
-      notifyEntries?: boolean;
-      notifyTargets?: boolean;
-      notifyStopLoss?: boolean;
-    }
-  ) {
+  async subscribeToSignal(signalId: string, telegramId: number) {
     const { data, error } = await supabase
       .from('signal_subscriptions')
       .upsert({
         signal_id: signalId,
         telegram_id: telegramId,
-        notify_entries: options?.notifyEntries ?? true,
-        notify_targets: options?.notifyTargets ?? true,
-        notify_stop_loss: options?.notifyStopLoss ?? true,
+        notify_entries: true,
+        notify_targets: true,
+        notify_stop_loss: true,
         is_active: true
       }, { onConflict: 'signal_id,telegram_id' })
       .select()
@@ -135,7 +138,6 @@ export const api = {
     return data;
   },
 
-  // Отписаться от сигнала
   async unsubscribeFromSignal(signalId: string, telegramId: number) {
     const { error } = await supabase
       .from('signal_subscriptions')
@@ -147,21 +149,6 @@ export const api = {
     return true;
   },
 
-  // Проверить подписку
-  async isSubscribed(signalId: string, telegramId: number) {
-    const { data, error } = await supabase
-      .from('signal_subscriptions')
-      .select('id')
-      .eq('signal_id', signalId)
-      .eq('telegram_id', telegramId)
-      .eq('is_active', true)
-      .maybeSingle();
-    
-    if (error) throw error;
-    return !!data;
-  },
-
-  // Получить все подписки пользователя
   async getUserSubscriptions(telegramId: number) {
     const { data, error } = await supabase
       .from('signal_subscriptions')
@@ -173,77 +160,14 @@ export const api = {
     return data?.map(s => s.signal_id) || [];
   },
 
-  // Получить количество подписчиков на сигнал
-  async getSubscriptionCount(signalId: string) {
-    const { count, error } = await supabase
-      .from('signal_subscriptions')
-      .select('id', { count: 'exact', head: true })
-      .eq('signal_id', signalId)
-      .eq('is_active', true);
-    
-    if (error) throw error;
-    return count || 0;
-  },
-
-  // Получить текущую цену из кэша
-  async getCurrentPrice(symbol: string) {
-    const { data, error } = await supabase
-      .from('price_cache')
-      .select('price, updated_at')
-      .eq('symbol', symbol)
-      .maybeSingle();
-    
-    if (error) throw error;
-    return data;
-  },
-
-  // Получить цены для нескольких символов
-  async getPrices(symbols: string[]) {
-    const { data, error } = await supabase
-      .from('price_cache')
-      .select('symbol, price, updated_at')
-      .in('symbol', symbols);
-    
-    if (error) throw error;
-    return data || [];
-  },
-
   // ==========================================
-  // СОБЫТИЯ (ЭКОНОМИЧЕСКИЙ КАЛЕНДАРЬ)
+  // СОБЫТИЯ
   // ==========================================
 
-  // Получить предстоящие события
-  async getUpcomingEvents() {
-    const { data, error } = await supabase
-      .from('upcoming_events')
-      .select('*')
-      .order('event_date', { ascending: true });
-    
-    if (error) throw error;
-    return data || [];
-  },
-
-  // Получить события на сегодня
-  async getTodayEvents() {
-    const { data, error } = await supabase
-      .from('today_events')
-      .select('*')
-      .order('event_date', { ascending: true });
-    
-    if (error) throw error;
-    return data || [];
-  },
-
-  // Получить все события с фильтрами
-  async getEvents(options?: { 
-    status?: string; 
-    eventType?: string;
-    fromDate?: string;
-    toDate?: string;
-  }) {
+  async getEvents(options?: { status?: string; eventType?: string }) {
     let query = supabase
       .from('events')
-      .select('*, admins(display_name)')
+      .select('*')
       .order('event_date', { ascending: true });
     
     if (options?.status) {
@@ -252,19 +176,12 @@ export const api = {
     if (options?.eventType) {
       query = query.eq('event_type', options.eventType);
     }
-    if (options?.fromDate) {
-      query = query.gte('event_date', options.fromDate);
-    }
-    if (options?.toDate) {
-      query = query.lte('event_date', options.toDate);
-    }
     
     const { data, error } = await query;
     if (error) throw error;
     return data || [];
   },
 
-  // Подписаться на событие
   async subscribeToEvent(eventId: string, telegramId: number) {
     const { data, error } = await supabase
       .from('event_subscriptions')
@@ -280,7 +197,6 @@ export const api = {
     return data;
   },
 
-  // Отписаться от события
   async unsubscribeFromEvent(eventId: string, telegramId: number) {
     const { error } = await supabase
       .from('event_subscriptions')
@@ -292,7 +208,6 @@ export const api = {
     return true;
   },
 
-  // Получить подписки на события
   async getEventSubscriptions(telegramId: number) {
     const { data, error } = await supabase
       .from('event_subscriptions')
