@@ -153,7 +153,7 @@ function App() {
   // ==========================================
   // LOADING STATE - показываем loader пока проверяем доступ
   // ==========================================
-  if (!isReady || accessLoading) {
+  if (!isReady || accessLoading || (user?.id && !isAllowed && accessLoading !== false)) {
     return <FullScreenLoader />;
   }
 
