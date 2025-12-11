@@ -2,7 +2,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { api } from '../lib/supabase';
 import type { Signal, Admin, TelegramUser } from '../types';
 
-// Хук для Telegram WebApp
+// ==========================================
+// TELEGRAM HOOK
+// ==========================================
 export function useTelegram() {
   const [user, setUser] = useState<TelegramUser | null>(null);
   const [isReady, setIsReady] = useState(false);
@@ -21,6 +23,9 @@ export function useTelegram() {
       }
       
       setIsReady(true);
+    } else {
+      // Для тестирования в браузере
+      setIsReady(true);
     }
   }, []);
 
@@ -32,18 +37,12 @@ export function useTelegram() {
     window.Telegram?.WebApp?.showAlert(message);
   }, []);
 
-  const showConfirm = useCallback((message: string): Promise<boolean> => {
-    return new Promise((resolve) => {
-      window.Telegram?.WebApp?.showConfirm(message, (confirmed) => {
-        resolve(confirmed);
-      });
-    });
-  }, []);
-
-  return { user, isReady, haptic, showAlert, showConfirm };
+  return { user, isReady, haptic, showAlert };
 }
 
-// Хук для проверки доступа
+// ==========================================
+// ACCESS HOOK
+// ==========================================
 export function useAccess(telegramId?: number) {
   const [isAllowed, setIsAllowed] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -58,16 +57,22 @@ export function useAccess(telegramId?: number) {
 
     const checkAccess = async () => {
       try {
-        // Проверяем админа
-        const admin = await api.checkAdmin(telegramId);
-        if (admin) {
+        // Сначала проверяем whitelist
+        const inWhitelist = await api.checkWhitelist(telegramId);
+        if (inWhitelist) {
           setIsAllowed(true);
-          setIsAdmin(true);
-          setAdminInfo(admin);
-        } else {
-          // Проверяем whitelist
-          const inWhitelist = await api.checkWhitelist(telegramId);
-          setIsAllowed(inWhitelist);
+        }
+        
+        // Потом проверяем админа
+        try {
+          const admin = await api.checkAdmin(telegramId);
+          if (admin) {
+            setIsAllowed(true);
+            setIsAdmin(true);
+            setAdminInfo(admin);
+          }
+        } catch {
+          // Таблица admins может не существовать
         }
       } catch (error) {
         console.error('Error checking access:', error);
@@ -82,7 +87,9 @@ export function useAccess(telegramId?: number) {
   return { isAllowed, isAdmin, adminInfo, isLoading };
 }
 
-// Хук для загрузки сигналов
+// ==========================================
+// SIGNALS HOOK
+// ==========================================
 export function useSignals(adminTelegramId?: number, risk?: string) {
   const [signals, setSignals] = useState<Signal[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -93,10 +100,7 @@ export function useSignals(adminTelegramId?: number, risk?: string) {
     setError(null);
 
     try {
-      const data = await api.getActiveSignals(
-        adminTelegramId?.toString(),
-        risk
-      );
+      const data = await api.getActiveSignals(adminTelegramId, risk);
       setSignals(data || []);
     } catch (err) {
       setError(err as Error);
@@ -109,22 +113,38 @@ export function useSignals(adminTelegramId?: number, risk?: string) {
     fetchSignals();
   }, [fetchSignals]);
 
-  return { signals, isLoading, error, refetch: fetchSignals };
+  const updateSignal = useCallback(async (signalId: string, data: Record<string, unknown>) => {
+    await api.updateSignal(signalId, data);
+  }, []);
+
+  const closeSignal = useCallback(async (signalId: string) => {
+    await api.closeSignal(signalId);
+  }, []);
+
+  return { 
+    signals, 
+    isLoading, 
+    error, 
+    refetch: fetchSignals,
+    updateSignal,
+    closeSignal
+  };
 }
 
-// Хук для загрузки админов
+// ==========================================
+// ADMINS HOOK
+// ==========================================
 export function useAdmins() {
   const [admins, setAdmins] = useState<Admin[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
     const fetchAdmins = async () => {
       try {
         const data = await api.getAdmins();
         setAdmins(data || []);
-      } catch (err) {
-        setError(err as Error);
+      } catch (error) {
+        console.error('Error loading admins:', error);
       } finally {
         setIsLoading(false);
       }
@@ -133,15 +153,16 @@ export function useAdmins() {
     fetchAdmins();
   }, []);
 
-  return { admins, isLoading, error };
+  return { admins, isLoading };
 }
 
-// Хук для управления подписками
+// ==========================================
+// SUBSCRIPTIONS HOOK
+// ==========================================
 export function useSubscriptions(telegramId?: number) {
   const [subscribedSignals, setSubscribedSignals] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
 
-  // Загрузка подписок при инициализации
   useEffect(() => {
     if (!telegramId) {
       setIsLoading(false);
@@ -162,106 +183,81 @@ export function useSubscriptions(telegramId?: number) {
     loadSubscriptions();
   }, [telegramId]);
 
-  // Подписаться на сигнал
-  const subscribe = useCallback(async (signalId: string) => {
-    if (!telegramId) return false;
-    
-    try {
-      await api.subscribeToSignal(signalId, telegramId);
-      setSubscribedSignals(prev => new Set([...prev, signalId]));
-      return true;
-    } catch (error) {
-      console.error('Error subscribing:', error);
-      return false;
-    }
-  }, [telegramId]);
-
-  // Отписаться от сигнала
-  const unsubscribe = useCallback(async (signalId: string) => {
-    if (!telegramId) return false;
-    
-    try {
-      await api.unsubscribeFromSignal(signalId, telegramId);
-      setSubscribedSignals(prev => {
-        const next = new Set(prev);
-        next.delete(signalId);
-        return next;
-      });
-      return true;
-    } catch (error) {
-      console.error('Error unsubscribing:', error);
-      return false;
-    }
-  }, [telegramId]);
-
-  // Переключить подписку
   const toggleSubscription = useCallback(async (signalId: string) => {
-    const isSubscribed = subscribedSignals.has(signalId);
-    
-    if (isSubscribed) {
-      return await unsubscribe(signalId);
-    } else {
-      return await subscribe(signalId);
-    }
-  }, [subscribedSignals, subscribe, unsubscribe]);
+    if (!telegramId) return;
 
-  // Проверить подписку
+    const isCurrentlySubscribed = subscribedSignals.has(signalId);
+
+    try {
+      if (isCurrentlySubscribed) {
+        await api.unsubscribeFromSignal(signalId, telegramId);
+        setSubscribedSignals(prev => {
+          const next = new Set(prev);
+          next.delete(signalId);
+          return next;
+        });
+      } else {
+        await api.subscribeToSignal(signalId, telegramId);
+        setSubscribedSignals(prev => new Set([...prev, signalId]));
+      }
+    } catch (error) {
+      console.error('Error toggling subscription:', error);
+      throw error;
+    }
+  }, [telegramId, subscribedSignals]);
+
   const isSubscribed = useCallback((signalId: string) => {
     return subscribedSignals.has(signalId);
   }, [subscribedSignals]);
 
   return {
-    subscribedSignals,
-    isLoading,
-    subscribe,
-    unsubscribe,
     toggleSubscription,
     isSubscribed,
+    isLoading,
   };
 }
 
-// Хук для получения текущих цен
+// ==========================================
+// PRICES HOOK
+// ==========================================
 export function usePrices(symbols: string[]) {
   const [prices, setPrices] = useState<Record<string, number>>({});
-  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (symbols.length === 0) {
-      setIsLoading(false);
-      return;
-    }
+    if (symbols.length === 0) return;
 
     const fetchPrices = async () => {
       try {
-        const data = await api.getPrices(symbols);
-        const priceMap: Record<string, number> = {};
-        data.forEach(item => {
-          priceMap[item.symbol] = item.price;
-        });
-        setPrices(priceMap);
+        const symbolsParam = JSON.stringify(symbols);
+        const response = await fetch(
+          `https://api.binance.com/api/v3/ticker/price?symbols=${encodeURIComponent(symbolsParam)}`
+        );
+        const data = await response.json();
+        
+        if (Array.isArray(data)) {
+          const priceMap: Record<string, number> = {};
+          data.forEach((item: { symbol: string; price: string }) => {
+            priceMap[item.symbol] = parseFloat(item.price);
+          });
+          setPrices(priceMap);
+        }
       } catch (error) {
         console.error('Error fetching prices:', error);
-      } finally {
-        setIsLoading(false);
       }
     };
 
     fetchPrices();
-    
-    // Обновляем каждые 10 секунд
-    const interval = setInterval(fetchPrices, 10000);
-    
+    const interval = setInterval(fetchPrices, 30000);
+
     return () => clearInterval(interval);
   }, [symbols.join(',')]);
 
-  return { prices, isLoading };
+  return { prices };
 }
 
 // ==========================================
-// ХУКИ ДЛЯ СОБЫТИЙ
+// EVENTS HOOK
 // ==========================================
-
-// Хук для загрузки событий
 export function useEvents(options?: { status?: string; eventType?: string }) {
   const [events, setEvents] = useState<Event[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -288,7 +284,9 @@ export function useEvents(options?: { status?: string; eventType?: string }) {
   return { events, isLoading, error, refetch: fetchEvents };
 }
 
-// Хук для подписок на события
+// ==========================================
+// EVENT SUBSCRIPTIONS HOOK
+// ==========================================
 export function useEventSubscriptions(telegramId?: number) {
   const [subscribedEvents, setSubscribedEvents] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
@@ -313,52 +311,37 @@ export function useEventSubscriptions(telegramId?: number) {
     loadSubscriptions();
   }, [telegramId]);
 
-  const subscribe = useCallback(async (eventId: string) => {
-    if (!telegramId) return false;
-    
-    try {
-      await api.subscribeToEvent(eventId, telegramId);
-      setSubscribedEvents(prev => new Set([...prev, eventId]));
-      return true;
-    } catch (error) {
-      console.error('Error subscribing to event:', error);
-      return false;
-    }
-  }, [telegramId]);
-
-  const unsubscribe = useCallback(async (eventId: string) => {
-    if (!telegramId) return false;
-    
-    try {
-      await api.unsubscribeFromEvent(eventId, telegramId);
-      setSubscribedEvents(prev => {
-        const next = new Set(prev);
-        next.delete(eventId);
-        return next;
-      });
-      return true;
-    } catch (error) {
-      console.error('Error unsubscribing from event:', error);
-      return false;
-    }
-  }, [telegramId]);
-
   const toggleSubscription = useCallback(async (eventId: string) => {
-    const isSubscribed = subscribedEvents.has(eventId);
-    return isSubscribed ? await unsubscribe(eventId) : await subscribe(eventId);
-  }, [subscribedEvents, subscribe, unsubscribe]);
+    if (!telegramId) return;
+
+    const isCurrentlySubscribed = subscribedEvents.has(eventId);
+
+    try {
+      if (isCurrentlySubscribed) {
+        await api.unsubscribeFromEvent(eventId, telegramId);
+        setSubscribedEvents(prev => {
+          const next = new Set(prev);
+          next.delete(eventId);
+          return next;
+        });
+      } else {
+        await api.subscribeToEvent(eventId, telegramId);
+        setSubscribedEvents(prev => new Set([...prev, eventId]));
+      }
+    } catch (error) {
+      console.error('Error toggling event subscription:', error);
+      throw error;
+    }
+  }, [telegramId, subscribedEvents]);
 
   const isSubscribed = useCallback((eventId: string) => {
     return subscribedEvents.has(eventId);
   }, [subscribedEvents]);
 
   return {
-    subscribedEvents,
-    isLoading,
-    subscribe,
-    unsubscribe,
     toggleSubscription,
     isSubscribed,
+    isLoading,
   };
 }
 
@@ -377,3 +360,5 @@ interface Event {
   status: string;
   admin_name?: string;
 }
+
+export type { Event };
