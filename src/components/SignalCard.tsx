@@ -117,43 +117,36 @@ export function SignalCard({
       className="relative bg-dark-700 rounded-2xl p-4 border border-dark-500/50 overflow-hidden"
     >
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <span className="text-xl font-bold text-white font-mono">
+      <div className="flex items-center justify-between gap-2 mb-4">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <span className="text-lg font-bold text-white font-mono shrink-0">
             {signal.symbol.replace('USDT', '')}
-            <span className="text-dark-500 text-sm">USDT</span>
+            <span className="text-dark-500 text-xs">USDT</span>
           </span>
           
           {displayPrice && (
-            <div className="flex items-center gap-1">
-              <span className="bg-dark-600 px-2 py-1 rounded-lg text-sm font-mono text-gray-300">
-                {displayPrice}
-              </span>
-              {priceChange && (
-                <span className={`text-xs font-medium ${isPriceUp ? 'text-green-400' : 'text-red-400'}`}>
-                  {isPriceUp ? '+' : ''}{priceChange}%
-                </span>
-              )}
-            </div>
+            <span className="bg-dark-600 px-2 py-1 rounded-lg text-sm font-mono text-gray-300 shrink-0">
+              {displayPrice}
+            </span>
           )}
           
-          <span className={`flex items-center gap-1 px-2 py-1 rounded-lg text-sm font-medium ${
+          <span className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium shrink-0 ${
             isLong ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
           }`}>
-            {isLong ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+            {isLong ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
             {signal.direction}
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 shrink-0">
           {/* Admin Edit Button */}
           {isAdmin && !isEditing && (
             <motion.button
               whileTap={{ scale: 0.9 }}
               onClick={() => setIsEditing(true)}
-              className="p-2 rounded-xl bg-dark-600 text-gray-400 hover:text-white hover:bg-dark-500 transition-all"
+              className="p-1.5 rounded-lg bg-dark-600 text-gray-400"
             >
-              <Edit3 size={18} />
+              <Edit3 size={16} />
             </motion.button>
           )}
 
@@ -162,28 +155,18 @@ export function SignalCard({
             whileTap={{ scale: 0.9 }}
             onClick={handleSubscriptionToggle}
             disabled={isSubscribing}
-            className={`
-              p-2 rounded-xl transition-all duration-200
-              ${isSubscribed 
-                ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' 
-                : 'bg-dark-600 text-gray-400 hover:text-white hover:bg-dark-500'
-              }
-              ${isSubscribing ? 'opacity-50 cursor-not-allowed' : ''}
-            `}
+            className={`p-1.5 rounded-lg ${isSubscribed 
+                ? 'bg-blue-500/20 text-blue-400' 
+                : 'bg-dark-600 text-gray-400'
+              }`}
           >
-            {isSubscribed ? (
-              <Bell size={18} className="fill-current" />
-            ) : (
-              <BellOff size={18} />
-            )}
+            {isSubscribed ? <Bell size={16} className="fill-current" /> : <BellOff size={16} />}
           </motion.button>
 
           {/* Risk Badge */}
-          <div className={`${risk.bg} px-3 py-1 rounded-lg flex items-center gap-1`}>
-            <AlertTriangle size={14} className={risk.color} />
-            <span className={`text-sm font-medium ${risk.color}`}>
-              {risk.label}
-            </span>
+          <div className={`${risk.bg} px-2 py-1 rounded-lg flex items-center gap-1`}>
+            <AlertTriangle size={12} className={risk.color} />
+            <span className={`text-xs font-medium ${risk.color}`}>{risk.label}</span>
           </div>
         </div>
       </div>
