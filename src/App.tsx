@@ -28,7 +28,7 @@ import {
 function App() {
   const { user, isReady, haptic } = useTelegram();
   const { isAllowed, isAdmin, isLoading: accessLoading } = useAccess(user?.id);
-  const { admins, isLoading: adminsLoading } = useAdmins();
+  const { admins } = useAdmins();
   
   // Нижняя навигация
   const [activeSection, setActiveSection] = useState<TabId>('signals');
