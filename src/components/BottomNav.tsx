@@ -40,7 +40,6 @@ export function BottomNav({ activeTab, onChange, notificationCount = 0 }: Bottom
                 }
               `}
             >
-              {/* Active background */}
               {isActive && (
                 <motion.div
                   layoutId="bottomNavActive"
@@ -49,11 +48,9 @@ export function BottomNav({ activeTab, onChange, notificationCount = 0 }: Bottom
                 />
               )}
               
-              {/* Icon */}
               <div className="relative z-10">
                 <Icon size={22} className={isActive ? 'stroke-[2.5]' : ''} />
                 
-                {/* Notification badge */}
                 {tab.id === 'notifications' && notificationCount > 0 && (
                   <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold min-w-[16px] h-4 flex items-center justify-center rounded-full px-1">
                     {notificationCount > 99 ? '99+' : notificationCount}
@@ -61,7 +58,6 @@ export function BottomNav({ activeTab, onChange, notificationCount = 0 }: Bottom
                 )}
               </div>
               
-              {/* Label */}
               <span className={`relative z-10 text-[11px] mt-1 font-medium ${isActive ? 'text-white' : ''}`}>
                 {tab.label}
               </span>
