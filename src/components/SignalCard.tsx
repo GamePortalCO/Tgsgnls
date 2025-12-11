@@ -65,7 +65,7 @@ export function SignalCard({
     try {
       await onUpdate(signal.id, {
         entries: editData.entries.map(price => ({ price })),
-        targets: editData.targets.map(price => ({ price, hit: false })),
+        targets: editData.targets.map(price => ({ price, percentage: 0, hit: false })),
         stop_loss: editData.stop_loss,
         comment: editData.comment || undefined
       });
