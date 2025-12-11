@@ -98,16 +98,6 @@ export function SignalCard({
     }
   };
 
-  const avgEntry = signal.entries.length > 0 
-    ? signal.entries.reduce((sum, e) => sum + e.price, 0) / signal.entries.length 
-    : 0;
-  
-  const priceChange = displayPrice && avgEntry 
-    ? ((displayPrice - avgEntry) / avgEntry * 100).toFixed(2)
-    : null;
-  
-  const isPriceUp = priceChange ? parseFloat(priceChange) > 0 : null;
-
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
